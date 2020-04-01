@@ -1,28 +1,35 @@
+FROM golang:1.14.1 AS builder
+
+ENV DOCKER_GEN_VERSION 0.7.4
+ENV FOREGO_VERSION 20180216151118
+
+# Get and compile docker-gen
+RUN git clone --branch $DOCKER_GEN_VERSION https://github.com/jwilder/docker-gen.git src/github.com/jwilder/docker-gen \
+ && make -C src/github.com/jwilder/docker-gen  get-deps \
+ && make -C src/github.com/jwilder/docker-gen
+
+# Get and compile forego
+RUN git clone --branch $FOREGO_VERSION https://github.com/ddollar/forego.git src/github.com/ddollar/forego \
+ && make -C src/github.com/ddollar/forego -e BIN=/go/bin/forego
+
+
 FROM nginx:1.17.8
 LABEL maintainer="Jason Wilder mail@jasonwilder.com"
 
-# Install wget and install/updates certificates
+# Install/updates certificates
 RUN apt-get update \
- && apt-get install -y -q --no-install-recommends \
-    ca-certificates \
-    wget \
+ && apt-get install -y -q --no-install-recommends ca-certificates \
  && apt-get clean \
  && rm -r /var/lib/apt/lists/*
-
 
 # Configure Nginx and apply fix for very long server names
 RUN echo "daemon off;" >> /etc/nginx/nginx.conf \
  && sed -i 's/worker_processes  1/worker_processes  auto/' /etc/nginx/nginx.conf
 
-# Install Forego
-ADD https://github.com/jwilder/forego/releases/download/v0.16.1/forego /usr/local/bin/forego
-RUN chmod u+x /usr/local/bin/forego
-
-ENV DOCKER_GEN_VERSION 0.7.4
-
-RUN wget https://github.com/jwilder/docker-gen/releases/download/$DOCKER_GEN_VERSION/docker-gen-linux-amd64-$DOCKER_GEN_VERSION.tar.gz \
- && tar -C /usr/local/bin -xvzf docker-gen-linux-amd64-$DOCKER_GEN_VERSION.tar.gz \
- && rm /docker-gen-linux-amd64-$DOCKER_GEN_VERSION.tar.gz
+# Install docker-gen and forego
+COPY --from=builder /go/src/github.com/jwilder/docker-gen/docker-gen /usr/local/bin/
+COPY --from=builder /go/bin/forego /usr/local/bin/forego
+RUN chmod u+x /usr/local/bin/docker-gen /usr/local/bin/forego
 
 COPY network_internal.conf /etc/nginx/
 
